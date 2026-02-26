@@ -2,8 +2,8 @@ import os
 import json
 import logging
 from flask import Flask, request, jsonify
-import autogen
-from autogen.agentchat.contrib.captainagent import CaptainAgent
+from autogen_agentchat import *
+from autogen_core import *from autogen.agentchat.contrib.captainagent import CaptainAgent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
