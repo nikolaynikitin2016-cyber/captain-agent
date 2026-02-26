@@ -5,8 +5,9 @@ from flask import Flask, request, jsonify
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_core import CancellationToken
-from autogen_ext.models import OpenAIChatCompletionClient
+from autogen_ext.models.openai import OpenAIChatCompletionClient
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def analyze():
     try:
         # Создаем агентов из библиотеки
         agents = []
-        for expert in agent_library[:3]:
+        for expert in agent_library[:3]:  # Берем первых 3 экспертов для простоты
             agent = AssistantAgent(
                 name=expert['name'].replace(' ', '_'),
                 description=expert['description'],
