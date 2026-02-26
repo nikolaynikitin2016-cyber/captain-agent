@@ -3,8 +3,10 @@ import json
 import logging
 from flask import Flask, request, jsonify
 from autogen_agentchat import *
-from autogen_core import *from autogen.agentchat.contrib.captainagent import CaptainAgent
+from autogen_core import *
+from autogen.agentchat.contrib.captainagent import CaptainAgent
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -57,10 +59,10 @@ def analyze():
     data = request.get_json()
     if not data or 'task' not in data:
         return jsonify({'error': 'Missing task field'}), 400
-
+    
     task = data['task']
     logger.info(f'Received task: {task}')
-
+    
     try:
         result = user_proxy.initiate_chat(
             captain,
