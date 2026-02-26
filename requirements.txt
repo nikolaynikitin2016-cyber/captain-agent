@@ -1,6 +1,7 @@
 pyautogen==0.10.0
 autogen-ext==0.7.5
 openai>=1.0.0
+tiktoken>=0.5.0
 flask>=3.0.0
 python-dotenv>=1.0.0
 yfinance>=0.2.40
