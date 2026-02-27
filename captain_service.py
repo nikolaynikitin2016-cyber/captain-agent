@@ -1,65 +1,170 @@
 import os
 import json
 import logging
+import asyncio
 from flask import Flask, request, jsonify
-# Здесь твои импорты для автогена, например:
-# from autogen_agentchat.agents import AssistantAgent
-# и так далее...
+from dotenv import load_dotenv
 
+# Импорты Autogen
+from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_agentchat.base import TaskResult
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+load_dotenv()
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Здесь должна быть твоя логика инициализации агентов и модели ---
-# (из твоих логов видно, что она у тебя есть)
-# Например:
-# model_client = OpenAIChatCompletionClient(...)
-# agent_team = ...
-# -----------------------------------------------------------------
+# ==================== НАСТРОЙКИ ====================
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-bc6d3eb0c7fc45159bfd212f2c03fd44")
+MODEL_NAME = "deepseek-chat"
+# ===================================================
+
+# Глобальные переменные
+model_client = None
+agent_team = None
+
+def init_model_client():
+    """Инициализация клиента DeepSeek"""
+    global model_client
+    try:
+        logger.info("🔄 Инициализация модели DeepSeek...")
+        model_client = OpenAIChatCompletionClient(
+            model=MODEL_NAME,
+            api_key=DEEPSEEK_API_KEY,
+            base_url="https://api.deepseek.com/v1",
+            model_info={
+                "vision": False,
+                "function_calling": True,
+                "json_output": True,
+                "family": "unknown",
+                "structured_output": True
+            }
+        )
+        logger.info("✅ Модель DeepSeek инициализирована")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации модели: {e}")
+        return False
+
+def init_agent_team():
+    """Создание команды агентов"""
+    global agent_team, model_client
+    try:
+        logger.info("🔄 Создание команды агентов...")
+        
+        # Технический аналитик
+        tech_analyst = AssistantAgent(
+            name="Tech_Analyst",
+            model_client=model_client,
+            system_message="Ты — технический аналитик. Анализируй графики и индикаторы (RSI, MACD). Отвечай кратко, только по делу."
+        )
+        
+        # Новостной аналитик
+        news_analyst = AssistantAgent(
+            name="News_Analyst",
+            model_client=model_client,
+            system_message="Ты — новостной аналитик. Оценивай рыночные настроения на основе новостей. Будь краток."
+        )
+        
+        # ЛПР
+        decision_maker = AssistantAgent(
+            name="Decision_Maker",
+            model_client=model_client,
+            system_message="Ты — главный аналитик. Собери отчеты от других агентов и дай итоговую рекомендацию."
+        )
+        
+        # Создаем команду
+        agent_team = RoundRobinGroupChat(
+            participants=[tech_analyst, news_analyst, decision_maker],
+            max_turns=5
+        )
+        logger.info("✅ Команда агентов создана")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания команды: {e}")
+        return False
+
+async def run_analysis(task: str) -> str:
+    """Запуск анализа задачи командой агентов"""
+    try:
+        logger.info(f"🔍 Анализ задачи: {task}")
+        
+        result_text = ""
+        async for message in agent_team.run_stream(task=task):
+            if isinstance(message, TaskResult):
+                continue
+            if hasattr(message, 'content') and message.content:
+                result_text += f"{message.source}: {message.content}\n\n"
+        
+        logger.info(f"✅ Анализ завершен, длина ответа: {len(result_text)}")
+        return result_text if result_text else "Анализ не дал результатов."
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка анализа: {e}")
+        return f"Ошибка анализа: {str(e)}"
+
+# ==================== МАРШРУТЫ ====================
 
 @app.route('/', methods=['GET'])
 def index():
-    """Корневой маршрут для проверки."""
-    logger.info("GET / called")
-    return jsonify({"status": "CaptainAgent is running"}), 200
+    """Корневой маршрут"""
+    return jsonify({
+        "status": "CaptainAgent running",
+        "endpoints": {
+            "/": "GET - this info",
+            "/health": "GET - health check",
+            "/analyze": "POST - send task for analysis"
+        }
+    }), 200
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Маршрут для проверки здоровья Render."""
-    logger.info("GET /health called")
+    """Health check"""
     return jsonify({"status": "healthy"}), 200
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """Основной маршрут для получения задач от Telegram бота."""
-    logger.info("POST /analyze called")
+    """Основной маршрут для анализа"""
+    logger.info("📥 POST /analyze called")
+    
     try:
-        # Получаем JSON из запроса
         data = request.get_json()
-        if not data or 'task' not in data:
-            logger.warning("Bad request: missing 'task'")
-            return jsonify({"error": "Missing 'task' in JSON body"}), 400
-
-        task = data['task']
-        logger.info(f"Received task: {task}")
-
-        # --- ЗДЕСЬ ТВОЯ ОСНОВНАЯ ЛОГИКА ---
-        # 1. Запусти команду агентов с задачей `task`
-        # 2. Дождись результата
-        # 3. Сохрани результат в переменную `result_text`
-        # -----------------------------------
-        # Пока, для теста, вернем эхо:
-        result_text = f"Агенты получили задачу: '{task}'"
-
-        logger.info(f"Task completed. Result: {result_text[:100]}...")
-        return jsonify({"result": result_text}), 200
-
+        if not data:
+            return jsonify({"error": "No JSON data"}), 400
+        
+        task = data.get('task')
+        if not task:
+            return jsonify({"error": "Missing 'task' field"}), 400
+        
+        logger.info(f"📝 Task: {task[:50]}...")
+        
+        # Проверяем инициализацию
+        if not model_client or not agent_team:
+            return jsonify({"error": "System not initialized"}), 503
+        
+        # Запускаем анализ
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(run_analysis(task))
+        loop.close()
+        
+        return jsonify({"result": result}), 200
+        
     except Exception as e:
-        logger.error(f"Error processing /analyze: {e}", exc_info=True)
-        return jsonify({"error": "Internal server error"}), 500
+        logger.error(f"❌ Ошибка: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
-# Блок для локального запуска (не будет использоваться на Render с Gunicorn)
+# ==================== ЗАПУСК ====================
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    logger.info(f"Starting development server on port {port}...")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    # Инициализация при старте
+    if init_model_client() and init_agent_team():
+        port = int(os.environ.get('PORT', 10000))
+        logger.info(f"🚀 Запуск CaptainAgent на порту {port}")
+        app.run(host='0.0.0.0', port=port, debug=False)
+    else:
+        logger.error("❌ Не удалось инициализировать систему")
